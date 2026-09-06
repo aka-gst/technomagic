@@ -196,6 +196,7 @@ html, body {
  * холста» переживёт ровно до первого нового блока в разметке, и тот молча
  * окажется в кадре.
  */
+body.is-shooting .operation-hud,
 body.is-shooting .hud,
 body.is-shooting .daemons,
 body.is-shooting .pad,

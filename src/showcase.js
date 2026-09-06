@@ -68,13 +68,17 @@ function openSpot(world, wide, tall) {
 export function createShowcase(level, renderer, hooks = {}) {
   const world = createWorld(level);
 
-  const spot = openSpot(world, 7, 5);
+  /* Шире, если этаж позволяет: игроку нужен разбег для подхода в кадре. */
+  let wide = 9;
+  let spot = openSpot(world, wide, 5);
+  if (!spot) { wide = 7; spot = openSpot(world, wide, 5); }
   if (!spot) throw new Error('на этаже нет чистого места под сцену');
 
   /* Бочка в середине найденного места, трое под ней, игрок слева. */
-  const bx = (spot.tx + 3.5) * TILE_SIZE;
+  const bt = spot.tx + Math.floor(wide / 2);
+  const bx = (bt + 0.5) * TILE_SIZE;
   const by = (spot.ty + 1.5) * TILE_SIZE;
-  world.tiles[(spot.ty + 1) * world.w + spot.tx + 3] = TILE.BARREL;
+  world.tiles[(spot.ty + 1) * world.w + bt] = TILE.BARREL;
   world.rebake = true;
 
   const cast = world.enemies.filter((enemy) => enemy.alive).slice(0, 3);
@@ -114,11 +118,13 @@ export function createShowcase(level, renderer, hooks = {}) {
   world.kills = 0;
 
   /*
-   * Игрок стоит слева и близко: видно, чьих рук дело, и он не заслоняет
-   * цепь. Дальше двух клеток расстояние в кадре начинает занимать место,
-   * а показывать ему нечего.
+   * Игрок начинает ДАЛЬШЕ линии огня и приходит на неё сам, в кадре.
+   * Прежняя сцена ставила его сразу на место и стреляла на полсекунде —
+   * весь бой проходил до первого снятого кадра, и петля показывала итог,
+   * а не движение (факт Глаз: живых 1 кадр из 7, дальше статика 3.6 с).
+   * Стреляет он с двух клеток: ближе он заслоняет цепь, дальше — пустота.
    */
-  world.player.x = bx - TILE_SIZE * 2.2;
+  world.player.x = bx - TILE_SIZE * (wide / 2 - 0.4);
   /*
    * Ровно на линии бочки. Первая постановка ставила игрока в один ряд с
    * тройкой — и выстрел уходил в них, минуя бочку: цепь не случалась
@@ -132,28 +138,73 @@ export function createShowcase(level, renderer, hooks = {}) {
      Двенадцать не читаются ничем, сколько ни правь свет. */
   world.zoomOverride = 3.6;
 
-  const view = { x: bx - TILE_SIZE * 0.3, y: by + TILE_SIZE * 0.8 };
+  /* Камера левее прежнего: игрок теперь стреляет с трёх клеток, и при
+     старом центре он оставался за левым краем кадра. */
+  const view = { x: bx - TILE_SIZE * 0.8, y: by + TILE_SIZE * 0.8 };
 
   const idle = { moveX: 0, moveY: 0, aimAngle: null, attack: false, charge: null };
   let elapsed = 0;
-  let fired = false;
+  let phase = 'подход';
+  let phaseAt = 0;
+  const go = (next) => { phase = next; phaseAt = elapsed; };
 
+  /*
+   * Бой разыгрывается во времени, а не ставится итогом: подход → прицел →
+   * заряд (настоящий, с кольцом) → выстрел → разряд и домино → остаточное
+   * электричество. Каждая фаза — настоящий ввод, никакой результат не
+   * выдан руками; сцена лишь ведёт игрока, как вёл бы палец.
+   */
   function step(dt) {
     elapsed += dt;
+    const aimAngle = Math.atan2(by - world.player.y, bx - world.player.x);
+    const inp = { ...idle, aimAngle };
 
-    /*
-     * Один ход, и дальше мир играет сам. Молния в бочку: вода разливается,
-     * разряд идёт по ней, трое падают по очереди. Ждём полсекунды до
-     * выстрела, чтобы в петлю попал и замах, а не одни последствия.
-     */
-    if (!fired && elapsed >= 0.5) {
-      fired = true;
-      world.player.stack = ['bolt'];
-      update(world, dt, { ...idle, aimAngle: 0, attack: true });
+    if (phase === 'подход') {
+      update(world, dt, { ...inp, moveX: 1 });
+      /*
+       * Стоп с запасом: после отпускания хода игрок скользит ещё ~0.2
+       * клетки, и первый вариант сцены довёз его в собственную цепь —
+       * разряд убивал самого мага, кадр остатка снимал его труп.
+       * Порог 2.5 клетки + гашение скольжения держат его сухим.
+       */
+      /*
+       * Три клетки — не вкус, а арифметика цепи: CHAIN_HOP = 2.2 клетки,
+       * разлив бочки мочит и игрока, и мокрого цепь достаёт через
+       * ближнего врага. На 2.2 и даже 2.5 клетках разряд убивал самого
+       * мага (нашлось постановкой кадра: в кадре остатка лежал его труп).
+       * Дистанция до ближнего врага при трёх клетках — 2.28 > 2.2.
+       */
+      if (world.player.x >= bx - TILE_SIZE * 3.0) {
+        world.player.vx = 0;
+        world.player.vy = 0;
+        go('прицел');
+      }
       return;
     }
-
-    update(world, dt, { ...idle, aimAngle: world.player.angle });
+    if (phase === 'прицел') {
+      /* Короткая стойка: замах читается отдельно от шага. */
+      update(world, dt, inp);
+      if (elapsed - phaseAt >= 0.3) go('заряд-старт');
+      return;
+    }
+    if (phase === 'заряд-старт') {
+      world.player.stack = [];
+      update(world, dt, { ...inp, charge: 'bolt' });
+      go('заряд');
+      return;
+    }
+    if (phase === 'заряд') {
+      update(world, dt, inp);
+      if (world.player.chargeLeft <= 0) go('выстрел');
+      return;
+    }
+    if (phase === 'выстрел') {
+      update(world, dt, { ...inp, attack: true });
+      go('мир');
+      return;
+    }
+    /* Дальше мир играет сам: разряд, домино падений, остаточные искры. */
+    update(world, dt, inp);
   }
 
   function render() {
@@ -167,11 +218,22 @@ export function createShowcase(level, renderer, hooks = {}) {
   function state() {
     return {
       секунд: Number(elapsed.toFixed(2)),
-      выстрел: fired,
+      /*
+       * Намеренная длительность сцены. В скрытой вкладке таймеры душатся
+       * и измеренное время врёт кратно — снимающий полагается на это
+       * число, а не на секундомер (навык operator, «длительность врёт»).
+       */
+      длительность: 4.5,
+      этап: phase,
+      выстрел: phase === 'мир',
+      /* Игрок обязан пережить собственный разряд — без этой строки его
+         смерть в сцене один раз прошла незамеченной через прогон. */
+      игрокЖив: world.player.alive,
       живых: world.enemies.filter((enemy) => enemy.alive).length,
       упавших: world.corpses.length,
       мокрых: world.enemies.filter((enemy) => (enemy.wet || 0) > 0).length,
       подТоком: Boolean(world.charged),
+      остаток: Boolean(world.residual),
       частиц: world.particles.length,
     };
   }

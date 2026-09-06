@@ -647,6 +647,51 @@ export function createRenderer(canvas) {
     g.restore();
   }
 
+  /*
+   * Остаточное электричество на воде (просьба Сергея): после того как
+   * фронт разряда прошёл, лужа ещё пару секунд дышит слабым светом и
+   * изредка выбрасывает короткие искры. Рисуется заметно тише drawCharge:
+   * это память о разряде, а не сам разряд — иначе двух событий не отличить.
+   */
+  function drawResidual(g, world, range) {
+    const rez = world.residual;
+    if (!rez) return;
+
+    const fade = rez.life / rez.max;
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+
+    for (let ty = range.y0; ty <= range.y1; ty += 1) {
+      for (let tx = range.x0; tx <= range.x1; tx += 1) {
+        const i = ty * world.w + tx;
+        if (!rez.tiles.has(i)) continue;
+
+        const px = tx * TILE_SIZE;
+        const py = ty * TILE_SIZE;
+
+        /* Дыхание, а не ровный свет: у каждой клетки своя фаза, иначе всё
+           поле мигает как одна лампа. */
+        const puls = 0.5 + 0.5 * Math.sin(world.time * 7 + i * 1.7);
+        g.fillStyle = `rgba(150,235,255,${((0.04 + 0.08 * puls) * fade).toFixed(3)})`;
+        g.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+
+        if (Math.random() < 0.05 * fade) {
+          const sx = px + Math.random() * TILE_SIZE;
+          const sy = py + Math.random() * TILE_SIZE;
+          g.strokeStyle = `rgba(220,250,255,${(0.35 + 0.45 * fade).toFixed(3)})`;
+          g.lineWidth = 1.2;
+          g.beginPath();
+          g.moveTo(sx, sy);
+          g.lineTo(sx + (Math.random() - 0.5) * 9, sy + (Math.random() - 0.5) * 9);
+          g.lineTo(sx + (Math.random() - 0.5) * 14, sy + (Math.random() - 0.5) * 14);
+          g.stroke();
+        }
+      }
+    }
+
+    g.restore();
+  }
+
   function drawGround(g, world, range) {
     if (!world.ground) return;
 
@@ -1090,6 +1135,12 @@ export function createRenderer(canvas) {
         x: corpse.x + jitter, y: corpse.y, angle: corpse.angle,
         palette: ROBES.dead, sheet: 'corpse', phase: 0, corpse: true,
       });
+
+      /* Тело после разряда потрескивает — остаточное электричество носят
+         не только живые. Чем свежее удар, тем чаще дуги. */
+      if ((corpse.zap || 0) > 0 && Math.random() < 0.2 + corpse.zap * 0.35) {
+        arcs(g, corpse);
+      }
     }
   }
 
@@ -1961,6 +2012,7 @@ const DARKNESS = false;
     drawFloor(ctx, world, theme, range);
     drawGround(ctx, world, range);
     drawCharge(ctx, world, range);
+    drawResidual(ctx, world, range);
     drawDanger(ctx, world);
     drawDecals(ctx, world);
     drawCorpses(ctx, world);

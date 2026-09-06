@@ -1976,6 +1976,14 @@ export function discharge(world, x, y, substance) {
    */
   world.charged = { tiles: live, x, y, life: 0.5, max: 0.5 };
 
+  /*
+   * Остаточное электричество — просьба Сергея словами: после разряда вода
+   * не гаснет мгновенно, а ещё пару секунд потрескивает и слабо светится.
+   * Это память о разряде, не сам разряд: держится дольше фронта, рисуется
+   * тише (см. drawResidual), и по ней читается «лужа всё ещё опасна была».
+   */
+  world.residual = { tiles: live, x, y, life: 2.6, max: 2.6 };
+
   let order = 0;
 
   for (const body of hit) {
@@ -2019,12 +2027,18 @@ export function discharge(world, x, y, substance) {
           killPlayer(world, angle);
           return;
         }
+        const trupovBylo = world.corpses.length;
         if (world.enemies.includes(body)) {
           if (resisted(world, body, angle, { elements: substance.elements })) return;
           killEnemy(world, body, angle, 'chain',
             { by: 'player', weapon: 'daemon', elements: substance.elements });
         } else {
           killNeutral(world, body, angle, 'chain');
+        }
+        /* Убитое током тело потрескивает и после смерти — остаточное
+           электричество носят не только живые (см. drawCorpses). */
+        if (world.corpses.length > trupovBylo) {
+          world.corpses[world.corpses.length - 1].zap = 1.8;
         }
       });
     });
@@ -2131,9 +2145,17 @@ export function update(world, dt, intent) {
     if (world.charged.life <= 0) world.charged = null;
   }
 
-  /* Метка «бьёт током» гаснет сама — её носят и живые, и игрок. */
+  if (world.residual) {
+    world.residual.life -= dt;
+    if (world.residual.life <= 0) world.residual = null;
+  }
+
+  /* Метка «бьёт током» гаснет сама — её носят живые, игрок и тела. */
   world.player.zap = Math.max(0, (world.player.zap || 0) - dt);
   for (const enemy of world.enemies) enemy.zap = Math.max(0, (enemy.zap || 0) - dt);
+  for (const corpse of world.corpses) {
+    if (corpse.zap) corpse.zap = Math.max(0, corpse.zap - dt);
+  }
 
   if (world.state === 'play') world.time += dt;
 

@@ -1616,7 +1616,14 @@ window.technomagic = {
       world: made.world,
       step: (dt) => withSeed((seed + Math.round(made.state().секунд * 1000)) >>> 0,
         () => made.step(dt)),
-      render: () => withSeed(seed, () => made.render()),
+      /*
+       * Сид отрисовки свой на каждый кадр сцены, а не один на все: при
+       * общем сиде искры и дуги замирали — каждый кадр рисовал ту же
+       * «случайность», и остаточное электричество стояло как картинка.
+       * Детерминизм не теряется: номер кадра при повторном прогоне тот же.
+       */
+      render: () => withSeed((seed + Math.round(made.state().секунд * 60)) >>> 0,
+        () => made.render()),
       state: () => made.state(),
       stop() {
         shooting = null;
@@ -1702,3 +1709,18 @@ callScreen();
 ui.mute.dataset.off = audio.isMuted() ? '1' : '0';
 ui.mute.textContent = audio.isMuted() ? 'ЗВУК ВЫКЛ' : 'ЗВУК ВКЛ';
 requestAnimationFrame(frame);
+
+/*
+ * СЪЁМОЧНЫЙ АДРЕС: ?scena — сцена витрины стартует сама, без рук.
+ * Снимающему не нужно знать пульт: открыл адрес — идёт бой для петли
+ * (подход → заряд → разряд → остаточное электричество, ~4.5 с).
+ * Сама глушит звук: съёмочный адрес обязан молчать без отдельного
+ * параметра (снимающий всё равно дублирует это ключом браузера).
+ * Проверка, что режим включился, — не «страница открылась», а признак
+ * в состоянии: у window.technomagic.scena() есть поле «этап».
+ */
+if (/(^|[?&#])(scena|сцена)([=&#]|$)/i.test(`${location.search}${location.hash}`)) {
+  audio.setMuted(true);
+  const съёмка = window.technomagic.showcase({ width: 960, height: 540 });
+  window.technomagic.scena = () => съёмка.state();
+}
