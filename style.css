@@ -376,7 +376,7 @@ body.is-shooting .tome {
 .mute[data-off="1"] { color: var(--pink); border-color: #ff2d9555; }
 
 /* Вторая кнопка того же ряда: книга стоит под звуком, а не в углу карты. */
-.mute-second { top: calc(max(10px, env(safe-area-inset-top)) + 74px); }
+.mute-second { top: calc(max(10px, env(safe-area-inset-top)) + 104px); }
 
 .toast {
   position: fixed;
@@ -718,7 +718,7 @@ body.is-shooting .tome {
 
   .mute:not(.mute-second),
   .game-home-menu {
-    top: calc(max(10px, env(safe-area-inset-top)) + 40px);
+    top: calc(max(10px, env(safe-area-inset-top)) + 48px);
     right: max(12px, env(safe-area-inset-right));
     left: auto;
     bottom: auto;
@@ -727,7 +727,7 @@ body.is-shooting .tome {
     background: #050b0cd0;
   }
 
-  .game-home-menu { top: calc(max(10px, env(safe-area-inset-top)) + 68px); }
+  .game-home-menu { top: calc(max(10px, env(safe-area-inset-top)) + 96px); }
 
   .toast { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 118px); }
   .found { top: 34%; }
